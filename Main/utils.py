@@ -51,6 +51,7 @@ def create_log_dict(args):
     log_dict['vector_size'] = args.vector_size
     log_dict['runs'] = args.runs
 
+    log_dict['model'] = args.model
     log_dict['batch_size'] = args.batch_size
     log_dict['tddroprate'] = args.tddroprate
     log_dict['budroprate'] = args.budroprate

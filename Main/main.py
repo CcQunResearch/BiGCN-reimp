@@ -18,13 +18,16 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import time
 from Main.pargs import pargs
-from Main.model import Net
+from Main.model import Net, UDNet
 from Main.dataset import WeiboDataset
 from torch_geometric.data import DataLoader
 from Main.utils import create_log_dict, write_log, write_json
 from Main.word2vec import Embedding, collect_sentences, train_word2vec
 from Main.sort import sort_weibo_dataset, sort_weibo_self_dataset, sort_weibo_2class_dataset
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+
+
 
 def train(train_loader, model, optimizer, device):
     model.train()
@@ -52,9 +55,9 @@ def test(model, dataloader, device):
     for data in dataloader:
         data = data.to(device)
         pred = model(data)
+        error += F.binary_cross_entropy(pred, data.y.to(torch.float32)).item() * data.num_graphs
         pred[pred >= 0.5] = 1
         pred[pred < 0.5] = 0
-        error += F.binary_cross_entropy(pred, data.y.to(torch.float32)).item() * data.num_graphs
         y_true += data.y.tolist()
         y_pred += pred.tolist()
     acc = accuracy_score(y_true, y_pred)
@@ -85,6 +88,7 @@ def test_and_log(model, val_loader, test_loader, device, epoch, lr, loss, train_
     log_record['test f1 F'].append(round(test_f1[1], 3))
     return val_error, log_info, log_record
 
+
 if __name__ == '__main__':
     args = pargs()
 
@@ -94,6 +98,7 @@ if __name__ == '__main__':
     runs = args.runs
     k = args.k
 
+    m = args.model
     batch_size = args.batch_size
     epochs = args.epochs
     diff_lr = args.diff_lr
@@ -115,7 +120,7 @@ if __name__ == '__main__':
     if not osp.exists(model_path):
         if dataset == 'Weibo':
             sort_weibo_dataset(label_source_path, label_dataset_path)
-        elif dataset == 'Weibo-2class' or dataset == 'Weibo-2class-long':
+        elif 'DRWeibo' in dataset:
             sort_weibo_2class_dataset(label_source_path, label_dataset_path)
 
         sentences = collect_sentences(label_dataset_path)
@@ -130,11 +135,11 @@ if __name__ == '__main__':
         word2vec = Embedding(model_path)
 
         if dataset == 'Weibo':
-            sort_weibo_dataset(label_source_path, label_dataset_path, k)
-        elif dataset == 'Weibo-2class' or dataset == 'Weibo-2class-long':
-            sort_weibo_2class_dataset(label_source_path, label_dataset_path, k)
+            sort_weibo_dataset(label_source_path, label_dataset_path, k_shot=k)
+        elif 'DRWeibo' in dataset:
+            sort_weibo_2class_dataset(label_source_path, label_dataset_path, k_shot=k)
 
-        train_dataset = WeiboDataset(train_path, word2vec,tddroprate=args.tddroprate, budroprate=args.budroprate)
+        train_dataset = WeiboDataset(train_path, word2vec, tddroprate=args.tddroprate, budroprate=args.budroprate)
         val_dataset = WeiboDataset(val_path, word2vec)
         test_dataset = WeiboDataset(test_path, word2vec)
 
@@ -142,11 +147,11 @@ if __name__ == '__main__':
         val_loader = DataLoader(val_dataset, batch_size=batch_size)
         test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
-        model = Net(vector_size,args.hid_feats,args.out_feats).to(device)
-        BU_params = list(map(id, model.BUrumorGCN.conv1.parameters()))
-        BU_params += list(map(id, model.BUrumorGCN.conv2.parameters()))
-        base_params = filter(lambda p: id(p) not in BU_params, model.parameters())
+        model = Net(vector_size, args.hid_feats, args.out_feats).to(device) if m == 'bigcn' else UDNet(vector_size, args.hid_feats, args.out_feats).to(device)
         if diff_lr:
+            BU_params = list(map(id, model.BUrumorGCN.conv1.parameters()))
+            BU_params += list(map(id, model.BUrumorGCN.conv2.parameters()))
+            base_params = filter(lambda p: id(p) not in BU_params, model.parameters())
             optimizer = Adam([
                 {'params': base_params},
                 {'params': model.BUrumorGCN.conv1.parameters(), 'lr': args.lr / 5},

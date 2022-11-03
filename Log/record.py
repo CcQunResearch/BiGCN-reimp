@@ -29,6 +29,7 @@ if __name__ == '__main__':
             print('vector_size', log['vector_size'])
             print('runs', log['runs'])
 
+            print('model', log['model'])
             print('batch_size', log['batch_size'])
             print('tddroprate', log['tddroprate'])
             print('budroprate', log['budroprate'])

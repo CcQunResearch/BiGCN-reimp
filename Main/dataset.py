@@ -41,6 +41,7 @@ class WeiboDataset(Dataset):
                 x = self.word2vec.get_sentence_embedding(post['source']['content']).view(1, -1)
                 y.append(post['source']['label'])
                 pass_num = 0
+                # 原来的id转换为原来在list中的位置
                 id_to_index = {}
                 for i, comment in enumerate(post['comment']):
                     if i == limit_num:
@@ -90,11 +91,16 @@ class WeiboDataset(Dataset):
                 else:
                     bu_edge_index = [burow, bucol]
 
+                udrow = tdrow + burow
+                udcol = tdcol + bucol
+                ud_edge_index = [udrow, udcol]
+
                 y = torch.LongTensor(y)
                 edge_index = torch.LongTensor(edge_index)
                 BU_edge_index = torch.LongTensor(bu_edge_index)
-                # one_data = Data(x=x, y=y, root_feat=root_feat, edge_index=edge_index, BU_edge_index=BU_edge_index)
-                one_data = Data(x=x, y=y, edge_index=edge_index, BU_edge_index=BU_edge_index)
+                UD_edge_index = torch.LongTensor(ud_edge_index)
+                one_data = Data(x=x, y=y, edge_index=edge_index, BU_edge_index=BU_edge_index,
+                                UD_edge_index=UD_edge_index)
                 data_list.append(one_data)
         else:
             for filename in raw_file_names:
@@ -135,11 +141,15 @@ class WeiboDataset(Dataset):
                 else:
                     bu_edge_index = [burow, bucol]
 
+                udrow = tdrow + burow
+                udcol = tdcol + bucol
+                ud_edge_index = [udrow, udcol]
+
                 y = torch.LongTensor(y)
                 edge_index = torch.LongTensor(edge_index)
                 BU_edge_index = torch.LongTensor(bu_edge_index)
-                # one_data = Data(x=x, y=y, root_feat=root_feat, edge_index=edge_index, BU_edge_index=BU_edge_index)
-                one_data = Data(x=x, y=y, edge_index=edge_index, BU_edge_index=BU_edge_index)
+                UD_edge_index = torch.LongTensor(ud_edge_index)
+                one_data = Data(x=x, y=y, edge_index=edge_index, BU_edge_index=BU_edge_index, UD_edge_index=UD_edge_index)
                 data_list.append(one_data)
 
         return data_list
