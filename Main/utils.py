@@ -8,7 +8,24 @@
 import json
 import os
 import shutil
-import re
+import jieba
+import nltk
+from nltk.tokenize import MWETokenizer
+
+mwe_tokenizer = MWETokenizer([('<', '@', 'user', '>'), ('<', 'url', '>')], separator='')
+
+
+def word_tokenizer(sentence, lang='en', mode='naive'):
+    if lang == 'en':
+        if mode == 'nltk':
+            return mwe_tokenizer.tokenize(nltk.word_tokenize(sentence))
+        elif mode == 'naive':
+            return sentence.split()
+    if lang == 'ch':
+        if mode == 'jieba':
+            return jieba.lcut(sentence)
+        elif mode == 'naive':
+            return sentence
 
 
 def write_json(dict, path):
@@ -19,6 +36,11 @@ def write_json(dict, path):
 def write_post(post_list, path):
     for post in post_list:
         write_json(post[1], os.path.join(path, f'{post[0]}.json'))
+
+
+def write_log(log, str):
+    log.write(f'{str}\n')
+    log.flush()
 
 
 def dataset_makedirs(dataset_path):
@@ -38,16 +60,13 @@ def dataset_makedirs(dataset_path):
     return train_path, val_path, test_path
 
 
-def clean_comment(comment_text):
-    match_res = re.match('回复@.*?:', comment_text)
-    if match_res:
-        return comment_text[len(match_res.group()):]
-    else:
-        return comment_text
-
 def create_log_dict(args):
     log_dict = {}
     log_dict['dataset'] = args.dataset
+    log_dict['unsup_dataset'] = args.unsup_dataset
+    log_dict['tokenize_mode'] = args.tokenize_mode
+    log_dict['unsup_train_size'] = args.unsup_train_size
+
     log_dict['vector_size'] = args.vector_size
     log_dict['runs'] = args.runs
 
@@ -67,8 +86,3 @@ def create_log_dict(args):
 
     log_dict['record'] = []
     return log_dict
-
-
-def write_log(log, str):
-    log.write(f'{str}\n')
-    log.flush()

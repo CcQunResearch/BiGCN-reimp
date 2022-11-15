@@ -26,7 +26,11 @@ if __name__ == '__main__':
 
             log = json.load(open(filepath, 'r', encoding='utf-8'))
             print('dataset', log['dataset'])
+            print('unsup_dataset', log['unsup_dataset'])
+            print('tokenize_mode', log['tokenize_mode'])
+
             print('vector_size', log['vector_size'])
+            print('unsup_train_size', log['unsup_train_size'])
             print('runs', log['runs'])
 
             print('model', log['model'])
@@ -44,14 +48,22 @@ if __name__ == '__main__':
             print('k', log['k'])
 
             acc_list = []
+            max_epoch_acc_list = []
             for run in log['record']:
                 # mean_acc = run['mean acc']
                 mean_acc = round(np.mean(run['test accs'][cal_mean:]), 3)
+                max_epoch_acc = round(np.max(run['test accs']), 3)
                 acc_list.append(mean_acc)
+                max_epoch_acc_list.append(max_epoch_acc)
 
             mean = round(sum(acc_list) / len(acc_list), 3)
+            mean_max_epoch = round(sum(max_epoch_acc_list) / len(max_epoch_acc_list), 3)
             sd = round(math.sqrt(sum([(x - mean) ** 2 for x in acc_list]) / len(acc_list)), 3)
+            sd_max_epoch = round(
+                math.sqrt(sum([(x - mean_max_epoch) ** 2 for x in max_epoch_acc_list]) / len(max_epoch_acc_list)), 3)
             maxx = max(acc_list)
-            print('test acc: {:.3f}±{:.3f}'.format(mean, sd))
-            print('max acc: {:.3f}'.format(maxx))
+            maxx_max_epoch = max(max_epoch_acc_list)
+            print('test acc | max acc: {:.3f}±{:.3f} | {:.3f}'.format(mean, sd, maxx))
+            print('test acc | max acc (max epoch): {:.3f}±{:.3f} | {:.3f}'.format(mean_max_epoch, sd_max_epoch,
+                                                                                  maxx_max_epoch))
             print()

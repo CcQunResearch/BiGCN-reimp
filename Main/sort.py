@@ -8,125 +8,17 @@
 import os
 import json
 import random
-import time
 from Main.utils import write_post, dataset_makedirs
 
 
-def sort_weibo_dataset(source_path, dataset_path, k_shot=10000):
-    post_id_list = []
-    post_label_list = []
-    all_post = []
+def sort_dataset(label_source_path, label_dataset_path, k_shot=10000, split='622'):
+    if split == '622':
+        train_split = 0.6
+        test_split = 0.8
+    elif split == '802':
+        train_split = 0.8
+        test_split = 0.8
 
-    label_path = os.path.join(source_path, 'Weibo.txt')
-    train_path, val_path, test_path = dataset_makedirs(dataset_path)
-
-    f = open(label_path, 'r', encoding='utf-8')
-    post_list = f.readlines()
-    for post in post_list:
-        post_id_list.append(post.split()[0].strip()[4:])
-        post_label_list.append(int(post.split()[1].strip()[-1]))
-
-    for i, post_id in enumerate(post_id_list):
-        reverse_dict = {}
-        comment_index = 0
-        comment_list = []
-
-        post_path = os.path.join(source_path, 'post', f'{post_id}.json')
-        post = json.load(open(post_path, 'r', encoding='utf-8'))
-        source = {
-            'content': post[0]['text'],
-            'user id': post[0]['uid'],
-            'tweet id': post[0]['mid'],
-            'label': post_label_list[i]
-        }
-
-        for j in range(1, len(post)):
-            comment_list.append({'comment id': comment_index, 'parent': -2, 'children': []})
-            reverse_dict[post[j]['mid']] = comment_index
-            comment_index += 1
-        for k in range(1, len(post)):
-            comment_list[k - 1]['content'] = post[k]['text']
-            comment_list[k - 1]['user id'] = post[k]['uid']
-            comment_list[k - 1]['user name'] = post[k]['username']
-            if post[k]['parent'] == source['tweet id']:
-                comment_list[k - 1]['parent'] = -1
-            else:
-                parent_index = reverse_dict[post[k]['parent']]
-                comment_list[k - 1]['parent'] = parent_index
-                comment_list[parent_index]['children'].append(k - 1)
-        all_post.append((post_id, {'source': source, 'comment': comment_list}))
-
-    random.seed(time.time())
-    random.shuffle(all_post)
-
-    train_post = []
-    positive_num = 0
-    negative_num = 0
-    for post in all_post[:int(len(all_post) * 0.6)]:
-        if post[1]['source']['label'] == 1 and positive_num != k_shot:
-            train_post.append(post)
-            positive_num += 1
-        if post[1]['source']['label'] == 0 and negative_num != k_shot:
-            train_post.append(post)
-            negative_num += 1
-        if positive_num == k_shot and negative_num == k_shot:
-            break
-    val_post = all_post[int(len(all_post) * 0.6):int(len(all_post) * 0.8)]
-    test_post = all_post[int(len(all_post) * 0.8):]
-    write_post(train_post, train_path)
-    write_post(val_post, val_path)
-    write_post(test_post, test_path)
-
-
-def sort_weibo_self_dataset(label_source_path, label_dataset_path, unlabel_dataset_path, k_shot=10000):
-    train_path, val_path, test_path = dataset_makedirs(label_dataset_path)
-
-    years = ['2020', '2021', '2022']
-    label_file_paths = []
-    for year in years:
-        path = os.path.join(label_source_path, year)
-        for filename in os.listdir(path):
-            label_file_paths.append(os.path.join(path, filename))
-
-    unlabel_source_path = os.path.join(unlabel_dataset_path, 'raw')
-    unlabel_file_paths = []
-    all_unlabel_filenames = os.listdir(unlabel_source_path)
-    random.seed(1234)
-    random.shuffle(all_unlabel_filenames)
-    for i in range(len(label_file_paths)):
-        unlabel_file_paths.append(os.path.join(unlabel_source_path, all_unlabel_filenames[i]))
-
-    all_post = []
-    for filepath in label_file_paths:
-        post = json.load(open(filepath, 'r', encoding='utf-8'))
-        all_post.append((post['source']['tweet id'], post))
-    for filepath in unlabel_file_paths:
-        post = json.load(open(filepath, 'r', encoding='utf-8'))
-        post['source']['label'] = 0
-        all_post.append((post['source']['tweet id'], post))
-
-    random.seed(time.time())
-    random.shuffle(all_post)
-    train_post = []
-    positive_num = 0
-    negative_num = 0
-    for post in all_post[:int(len(all_post) * 0.6)]:
-        if post[1]['source']['label'] == 1 and positive_num != k_shot:
-            train_post.append(post)
-            positive_num += 1
-        if post[1]['source']['label'] == 0 and negative_num != k_shot:
-            train_post.append(post)
-            negative_num += 1
-        if positive_num == k_shot and negative_num == k_shot:
-            break
-    val_post = all_post[int(len(all_post) * 0.6):int(len(all_post) * 0.8)]
-    test_post = all_post[int(len(all_post) * 0.8):]
-    write_post(train_post, train_path)
-    write_post(val_post, val_path)
-    write_post(test_post, test_path)
-
-
-def sort_weibo_2class_dataset(label_source_path, label_dataset_path, k_shot=10000):
     train_path, val_path, test_path = dataset_makedirs(label_dataset_path)
 
     label_file_paths = []
@@ -138,22 +30,44 @@ def sort_weibo_2class_dataset(label_source_path, label_dataset_path, k_shot=1000
         post = json.load(open(filepath, 'r', encoding='utf-8'))
         all_post.append((post['source']['tweet id'], post))
 
-    random.seed(time.time())
+    random.seed(1234)
     random.shuffle(all_post)
     train_post = []
-    positive_num = 0
-    negative_num = 0
-    for post in all_post[:int(len(all_post) * 0.6)]:
-        if post[1]['source']['label'] == 1 and positive_num != k_shot:
+
+    multi_class = False
+    for post in all_post:
+        if post[1]['source']['label'] == 2 or post[1]['source']['label'] == 3:
+            multi_class = True
+
+    num0 = 0
+    num1 = 0
+    num2 = 0
+    num3 = 0
+    for post in all_post[:int(len(all_post) * train_split)]:
+        if post[1]['source']['label'] == 0 and num0 != k_shot:
             train_post.append(post)
-            positive_num += 1
-        if post[1]['source']['label'] == 0 and negative_num != k_shot:
+            num0 += 1
+        if post[1]['source']['label'] == 1 and num1 != k_shot:
             train_post.append(post)
-            negative_num += 1
-        if positive_num == k_shot and negative_num == k_shot:
-            break
-    val_post = all_post[int(len(all_post) * 0.6):int(len(all_post) * 0.8)]
-    test_post = all_post[int(len(all_post) * 0.8):]
+            num1 += 1
+        if post[1]['source']['label'] == 2 and num2 != k_shot:
+            train_post.append(post)
+            num2 += 1
+        if post[1]['source']['label'] == 3 and num3 != k_shot:
+            train_post.append(post)
+            num3 += 1
+        if multi_class:
+            if num0 == k_shot and num1 == k_shot and num2 == k_shot and num3 == k_shot:
+                break
+        else:
+            if num0 == k_shot and num1 == k_shot:
+                break
+    if split == '622':
+        val_post = all_post[int(len(all_post) * train_split):int(len(all_post) * test_split)]
+        test_post = all_post[int(len(all_post) * test_split):]
+    elif split == '802':
+        val_post = all_post[-1:]
+        test_post = all_post[int(len(all_post) * test_split):]
     write_post(train_post, train_path)
     write_post(val_post, val_path)
     write_post(test_post, test_path)

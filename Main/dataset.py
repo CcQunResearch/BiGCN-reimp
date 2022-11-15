@@ -7,155 +7,71 @@
 # @Note    :
 import os
 import json
-import random
-import numpy as np
 import torch
-from torch.utils.data import Dataset
-from torch_geometric.data import Data
-from Main.utils import clean_comment
+from torch_geometric.data import Data, InMemoryDataset
 
 
-class WeiboDataset(Dataset):
-    def __init__(self, root, word2vec, clean=True, tddroprate=0.0, budroprate=0.0):
-        self.root = root
-        self.raw_dir = os.path.join(self.root, 'raw')
+class TreeDataset(InMemoryDataset):
+    def __init__(self, root, word_embedding, word2vec, transform=None, pre_transform=None,
+                 pre_filter=None):
+        self.word_embedding = word_embedding
         self.word2vec = word2vec
-        self.clean = clean
-        self.tddroprate = tddroprate
-        self.budroprate = budroprate
-        self.data_list = self.process()
+        super().__init__(root, transform, pre_transform, pre_filter)
+        self.data, self.slices = torch.load(self.processed_paths[0])
+
+    @property
+    def raw_file_names(self):
+        return os.listdir(self.raw_dir)
+
+    @property
+    def processed_file_names(self):
+        return ['data.pt']
+
+    def download(self):
+        pass
 
     def process(self):
         data_list = []
-        raw_file_names = os.listdir(self.raw_dir)
+        raw_file_names = self.raw_file_names
 
-        if self.clean:
-            limit_num = 600
-            pass_comment = ['', '转发微博', '转发微博。', '轉發微博', '轉發微博。']
-            for filename in raw_file_names:
-                y = []
-                row = []
-                col = []
-                filepath = os.path.join(self.raw_dir, filename)
-                post = json.load(open(filepath, 'r', encoding='utf-8'))
+        for filename in raw_file_names:
+            y = []
+            row = []
+            col = []
+
+            filepath = os.path.join(self.raw_dir, filename)
+            post = json.load(open(filepath, 'r', encoding='utf-8'))
+            if self.word_embedding == 'word2vec':
                 x = self.word2vec.get_sentence_embedding(post['source']['content']).view(1, -1)
+            elif self.word_embedding == 'tfidf':
+                tfidf = post['source']['content']
+                indices = [[0, int(index_freq.split(':')[0])] for index_freq in tfidf.split()]
+                values = [int(index_freq.split(':')[1]) for index_freq in tfidf.split()]
+            if 'label' in post['source'].keys():
                 y.append(post['source']['label'])
-                pass_num = 0
-                # 原来的id转换为原来在list中的位置
-                id_to_index = {}
-                for i, comment in enumerate(post['comment']):
-                    if i == limit_num:
-                        break
-                    id_to_index[comment['comment id']] = i
-                for i, comment in enumerate(post['comment']):
-                    if i == limit_num:
-                        break
-                    if comment['content'] in pass_comment and comment['children'] == []:
-                        pass_num += 1
-                        continue
-                    post['comment'][i]['comment id'] -= pass_num
-                for i, comment in enumerate(post['comment']):
-                    if i == limit_num:
-                        break
-                    if comment['content'] in pass_comment and comment['children'] == []:
-                        continue
+            for i, comment in enumerate(post['comment']):
+                if self.word_embedding == 'word2vec':
                     x = torch.cat(
-                        [x, self.word2vec.get_sentence_embedding(clean_comment(comment['content'])).view(1, -1)], 0)
-                    if comment['parent'] == -1:
-                        row.append(0)
-                    else:
-                        row.append(post['comment'][id_to_index[comment['parent']]]['comment id'] + 1)
-                    col.append(comment['comment id'] + 1)
+                        [x, self.word2vec.get_sentence_embedding(comment['content']).view(1, -1)], 0)
+                elif self.word_embedding == 'tfidf':
+                    indices += [[i + 1, int(index_freq.split(':')[0])] for index_freq in comment['content'].split()]
+                    values += [int(index_freq.split(':')[1]) for index_freq in comment['content'].split()]
+                row.append(comment['parent'] + 1)
+                col.append(comment['comment id'] + 1)
 
-                tdrow = row
-                tdcol = col
-                if self.tddroprate > 0:
-                    length = len(row)
-                    poslist = random.sample(range(length), int(length * (1 - self.tddroprate)))
-                    poslist = sorted(poslist)
-                    tdrow = list(np.array(tdrow)[poslist])
-                    tdcol = list(np.array(tdcol)[poslist])
-                    edge_index = [tdrow, tdcol]
-                else:
-                    edge_index = [tdrow, tdcol]
+            edge_index = [row, col]
+            y = torch.LongTensor(y)
+            edge_index = torch.LongTensor(edge_index)
+            if self.word_embedding == 'tfidf':
+                x = torch.sparse_coo_tensor(torch.tensor(indices).t(), values, (len(post['comment']) + 1, 5000),
+                                            dtype=torch.float32).to_dense()
+            one_data = Data(x=x, y=y, edge_index=edge_index) if 'label' in post['source'].keys() else \
+                Data(x=x, edge_index=edge_index)
+            data_list.append(one_data)
 
-                burow = col
-                bucol = row
-                if self.budroprate > 0:
-                    length = len(burow)
-                    poslist = random.sample(range(length), int(length * (1 - self.budroprate)))
-                    poslist = sorted(poslist)
-                    burow = list(np.array(burow)[poslist])
-                    bucol = list(np.array(bucol)[poslist])
-                    bu_edge_index = [burow, bucol]
-                else:
-                    bu_edge_index = [burow, bucol]
-
-                udrow = tdrow + burow
-                udcol = tdcol + bucol
-                ud_edge_index = [udrow, udcol]
-
-                y = torch.LongTensor(y)
-                edge_index = torch.LongTensor(edge_index)
-                BU_edge_index = torch.LongTensor(bu_edge_index)
-                UD_edge_index = torch.LongTensor(ud_edge_index)
-                one_data = Data(x=x, y=y, edge_index=edge_index, BU_edge_index=BU_edge_index,
-                                UD_edge_index=UD_edge_index)
-                data_list.append(one_data)
-        else:
-            for filename in raw_file_names:
-                y = []
-                row = []
-                col = []
-                filepath = os.path.join(self.raw_dir, filename)
-                post = json.load(open(filepath, 'r', encoding='utf-8'))
-                x = self.word2vec.get_sentence_embedding(post['source']['content']).view(1, -1)
-                y.append(post['source']['label'])
-                for i, comment in enumerate(post['comment']):
-                    x = torch.cat(
-                        [x, self.word2vec.get_sentence_embedding(clean_comment(comment['content'])).view(1, -1)], 0)
-                    row.append(comment['parent'] + 1)
-                    col.append(comment['comment id'] + 1)
-
-                tdrow = row
-                tdcol = col
-                if self.tddroprate > 0:
-                    length = len(row)
-                    poslist = random.sample(range(length), int(length * (1 - self.tddroprate)))
-                    poslist = sorted(poslist)
-                    tdrow = list(np.array(tdrow)[poslist])
-                    tdcol = list(np.array(tdcol)[poslist])
-                    edge_index = [tdrow, tdcol]
-                else:
-                    edge_index = [tdrow, tdcol]
-
-                burow = col
-                bucol = row
-                if self.budroprate > 0:
-                    length = len(burow)
-                    poslist = random.sample(range(length), int(length * (1 - self.budroprate)))
-                    poslist = sorted(poslist)
-                    burow = list(np.array(burow)[poslist])
-                    bucol = list(np.array(bucol)[poslist])
-                    bu_edge_index = [burow, bucol]
-                else:
-                    bu_edge_index = [burow, bucol]
-
-                udrow = tdrow + burow
-                udcol = tdcol + bucol
-                ud_edge_index = [udrow, udcol]
-
-                y = torch.LongTensor(y)
-                edge_index = torch.LongTensor(edge_index)
-                BU_edge_index = torch.LongTensor(bu_edge_index)
-                UD_edge_index = torch.LongTensor(ud_edge_index)
-                one_data = Data(x=x, y=y, edge_index=edge_index, BU_edge_index=BU_edge_index, UD_edge_index=UD_edge_index)
-                data_list.append(one_data)
-
-        return data_list
-
-    def __len__(self):
-        return len(self.data_list)
-
-    def __getitem__(self, index):
-        return self.data_list[index]
+        if self.pre_filter is not None:
+            data_list = [data for data in data_list if self.pre_filter(data)]
+        if self.pre_transform is not None:
+            data_list = [self.pre_transform(data) for data in data_list]
+        all_data, slices = self.collate(data_list)
+        torch.save((all_data, slices), self.processed_paths[0])
